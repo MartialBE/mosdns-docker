@@ -1,0 +1,297 @@
+# 日志设置
+log:
+  level: debug
+  file: "/etc/mosdns/mosdns.log"
+
+# 数据源设置
+data_providers:
+  - tag: geosite
+    file: "/etc/mosdns/geosite.dat"
+    auto_reload: true
+
+  - tag: geoip
+    file: "/etc/mosdns/geoip.dat"
+    auto_reload: true
+
+plugins:
+  ################ 匹配器 #################
+
+  # 查询 - CN 域名
+  - tag: query_cn
+    type: query_matcher
+    args:
+      domain:
+        - "provider:geosite:cn"
+
+  # 查询 - GFW
+  - tag: query_gfw
+    type: query_matcher
+    args:
+      domain:
+        - "provider:geosite:gfw"
+
+  # 查询 - 非 CN 域名
+  - tag: query_notcn
+    type: query_matcher
+    args:
+      domain:
+        - "provider:geosite:geolocation-!cn"
+
+  # 查询 - ADs
+  # - tag: query_ad
+  #   type: query_matcher
+  #   args:
+  #     domain:
+  #       - "provider:geosite:category-ads-all"
+
+  # 返回 - CN IP
+  - tag: response_cnip
+    type: response_matcher
+    args:
+      ip:
+        - "provider:geoip:cn"
+
+  ################ DNS #################
+
+  - tag: forward_local
+    type: fast_forward
+    args:
+      upstream:
+        - addr: 202.106.195.68
+        - addr: 202.106.46.151
+
+  - tag: forward_remote
+    type: fast_forward
+    args:
+      upstream:
+        - addr: tls://8.8.4.4
+        - addr: tls://8.8.8.8
+
+  # 阿里 DNS
+  - tag: ali
+    type: fast_forward
+    args:
+      upstream:
+        - addr: "https://dns.alidns.com/dns-query"
+          dial_addr: "223.5.5.5"
+          enable_pipeline: true
+          idle_timeout: 30
+          trusted: true
+        - addr: "tls://dns.alidns.com"
+          dial_addr: "223.5.5.5"
+          trusted: true
+          enable_pipeline: true
+
+  # DNSPOD DNS
+  - tag: dnspod
+    type: fast_forward
+    args:
+      upstream:
+        - addr: "https://doh.pub/dns-query"
+          dial_addr: "1.12.12.12"
+          idle_timeout: 30
+          trusted: true
+        - addr: "https://doh.pub/dns-query"
+          dial_addr: "120.53.53.53"
+          idle_timeout: 30
+          trusted: true
+
+  # 本地 DNS 备用
+  - tag: localdns
+    type: forward
+    args:
+      upstream:
+        - addr: "127.0.0.1:53"
+          
+  # Google DNS
+  - tag: google
+    type: fast_forward
+    args:
+      upstream:
+        - addr: "udp://8.8.8.8"
+        - addr: "https://dns.google/dns-query"
+          dial_addr: "8.8.8.8:443"
+          idle_timeout: 30
+          trusted: true
+
+  # Cloudflare DNS
+  - tag: cloudflare
+    type: fast_forward
+    args:
+      upstream:
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "1.1.1.1:443"
+          idle_timeout: 30
+          trusted: true
+
+  - tag: google_h3
+    type: "fast_forward"
+    args:
+      # 上游服务器。至少要配置一个。可配置多个，会并发请求全部服务器。
+      upstream:
+        - addr: "https://dns.google/dns-query"
+          dial_addr: "2001:4860:4860::8844"
+          trusted: true
+          enable_http3: true
+        - addr: "https://dns.google/dns-query"
+          dial_addr: "8.8.4.4"
+          trusted: true
+          enable_http3: true
+        - addr: "https://dns.google/dns-query"
+          dial_addr: "2001:4860:4860::8888"
+          trusted: true
+          enable_http3: true
+        - addr: "https://dns.google/dns-query"
+          dial_addr: "8.8.8.8"
+          trusted: true
+          enable_http3: true
+
+  - tag: cloudflare_h3
+    type: "fast_forward"
+    args:
+      upstream:
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "2606:4700:4700::1001"
+          trusted: true
+          enable_http3: true
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "1.0.0.1"
+          trusted: true
+          enable_http3: true
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "2606:4700:4700::1111"
+          trusted: true
+          enable_http3: true
+        - addr: "https://cloudflare-dns.com/dns-query"
+          dial_addr: "1.1.1.1"
+          trusted: true
+          enable_http3: true
+
+  ############## 附属功能 ###############
+
+  # 内存缓存
+  - tag: mem_cache
+    type: cache
+    args:
+      size: 1024 
+      lazy_cache_ttl: 86400
+      lazy_cache_reply_ttl: 30
+      cache_everything: true
+    
+  # 修改应答 ttl
+  - tag: modify_ttl
+    type: ttl
+    args:
+      minimal_ttl: 300
+      maximum_ttl: 3600
+
+  - tag: set_edns0_bufsize
+    type: bufsize
+    args:
+      size: 1232
+      
+  - tag: set_edns0_client_subnet
+    type: ecs
+    args:
+      auto: true
+      mask4: 24
+      mask6: 56
+
+  ################ 序列 #################
+
+  # local 序列
+  - tag: local
+    type: sequence
+    args:
+      exec:
+        - parallel:
+            - - ali
+            - - dnspod 
+        # - primary:
+        #     - ali
+        #   secondary:
+        #     - forward_local
+        #   fast_fallback: 200 # 这里建议设置成 primary 服务器正常延时的 2~5 倍 单位: 毫秒。
+        #   always_standby: true
+  # remote 序列
+  - tag: remote
+    type: sequence
+    args:
+      exec:
+        - parallel:
+            - - google 
+            - - cloudflare
+            # - - google_h3
+            # - - cloudflare_h3
+        # - primary:
+        #     - cloudflare
+        #   secondary:
+        #     - forward_remote
+        #   fast_fallback: 200 # 这里建议设置成 primary 服务器正常延时的 2~5 倍 单位: 毫秒。
+        #   always_standby: true
+  # 核心序列
+  - tag: core
+    type: sequence
+    args:
+      exec:
+        # - if: query_ad # 屏蔽广告域名
+        #   exec:
+        #     - _new_nxdomain_response
+        #     - _return
+        - if: query_cn # CN 域名
+          exec:
+            - _pad_query
+            - local
+            - if: "response_cnip" # 结果是 cnip
+              exec:
+                - _return # 结束
+        - if: query_notcn # 已知的非 cn 域名
+          exec:
+            - _prefer_ipv4
+            - _pad_query
+            - remote
+            - if: "!response_cnip" # 结果是 非cnip
+              exec:
+                - _return # 结束
+        - primary: #其他所有情况
+            - _prefer_ipv4
+            - _pad_query
+            - remote
+          secondary:
+            - _prefer_ipv4
+            - _pad_query
+            - local
+          fast_fallback: 400 # 这里建议设置成 local 服务器正常延时的 2~5 倍 单位: 毫秒
+          always_standby: true
+
+  - tag: collector
+    type: metrics_collector
+
+  # 执行序列
+  - tag: main_sequence
+    type: sequence
+    args:
+      exec:
+        # - _enable_response_padding
+        # - _misc_optm
+        # - set_edns0_bufsize
+        # - set_edns0_client_subnet
+        # - _pad_query
+        - collector
+        - mem_cache
+        - core
+        - modify_ttl
+        
+
+# 服务器设置
+servers:
+  - exec: main_sequence
+    listeners:
+      - protocol: udp
+        addr: :53
+      - protocol: tcp
+        addr: :53
+
+# API 入口设置
+api:
+  http: :8338
