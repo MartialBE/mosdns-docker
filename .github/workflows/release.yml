@@ -5,6 +5,9 @@ on:
     paths:
       - "tag"
       - "Dockerfile"
+      - "config.yaml"
+      - "entrypoint.sh"
+      - "update_geodat.sh"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -37,7 +40,7 @@ jobs:
           build-args: |
             TAG=${{ env.TAG }}
             REPOSITORY=IrineSistiana/mosdns
-          platforms: linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/mosdns:latest
